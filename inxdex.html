@@ -1,0 +1,581 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>EcoBank Showdown — Reality Quiz Game</title>
+<style>
+  :root{
+    --bg1:#0f172a; --bg2:#04203a; --accent:#06b6d4;
+    --glow-green: 0 0 30px rgba(34,197,94,0.9);
+    --glow-red: 0 0 30px rgba(239,68,68,0.9);
+  }
+  *{box-sizing:border-box;font-family:Inter, system-ui, Arial, sans-serif}
+  body{
+    margin:0; min-height:100vh; color:#e6eef6;
+    background: linear-gradient(135deg,var(--bg1),var(--bg2));
+    overflow:hidden;
+  }
+
+  /* Animated background "stage lights" */
+  .stage {
+    position:fixed; inset:0; z-index:0; pointer-events:none;
+    background:
+     radial-gradient(ellipse at 10% 20%, rgba(6,182,212,0.06) 0 15%, transparent 20%),
+     radial-gradient(ellipse at 90% 60%, rgba(99,102,241,0.04) 0 20%, transparent 30%),
+     linear-gradient(180deg, rgba(255,255,255,0.02), transparent 20%);
+    animation: pulse 6s infinite ease-in-out;
+  }
+  @keyframes pulse {
+    0%{filter:brightness(1)}
+    50%{filter:brightness(1.06)}
+    100%{filter:brightness(1)}
+  }
+
+  .container{position:relative; z-index:2; padding:24px; max-width:1200px; margin:0 auto;}
+  header{display:flex; justify-content:space-between; align-items:center; margin-bottom:12px}
+  h1{margin:0; font-size:22px; letter-spacing:0.6px}
+  .subtitle{font-size:13px; opacity:0.85}
+
+  /* Scoreboard */
+  .scoreboard{
+    position:relative; top:18px; right:18px; background:rgba(255,255,255,0.03);
+    padding:10px 14px; border-radius:10px; min-width:220px;
+    backdrop-filter: blur(6px); box-shadow: 0 6px 18px rgba(2,6,23,0.6);
+  }
+/* make ranking items show dragging cursor and subtle background on hover */
+.scoreboard li { cursor: grab; padding:6px 0; transition:background .12s ease; }
+.scoreboard li:active { cursor:grabbing; }
+.scoreboard li:hover { background: rgba(255,255,255,0.02); border-radius:4px; }
+
+
+  /* Welcome card */
+  .welcome{
+    background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    padding:18px; border-radius:12px; box-shadow: 0 8px 30px rgba(2,6,23,0.6);
+  }
+  .group-names{display:flex; flex-wrap:wrap; gap:10px; margin-top:12px}
+  .group-names input{flex:1 1 30%; min-width:160px; padding:8px 10px; border-radius:8px; border:1px solid rgba(255, 255, 255, 0.06); background:transparent; color:#e6eef6}
+
+  .controls{display:flex; gap:8px; margin-top:12px}
+  .btn{cursor:pointer; padding:10px 14px; border-radius:10px; border:none; background:var(--accent); color:#04203a; font-weight:600}
+  .btn.secondary{background:transparent; color:var(--accent); border:1px solid rgba(6,182,212,0.18)}
+
+  /* Game area */
+  .game-area{display:none; margin-top:18px; min-height:360px}
+  .top-bar{display:flex; justify-content:space-between; align-items:center; gap:8px}
+  .countdown{font-size:34px; font-weight:700}
+  .question-card{
+    margin-top:14px; background:rgba(255,255,255,0.02); padding:18px; border-radius:12px;
+    box-shadow: 0 6px 20px rgba(2,6,23,0.6);
+  }
+  .question-text{font-size:20px; margin:0 0 12px 0}
+  .choices{display:grid; grid-template-columns:repeat(2,1fr); gap:10px}
+  .choice{
+    padding:12px; background:rgba(255,255,255,0.03); border-radius:10px; cursor:pointer; text-align:center;
+    font-weight:700; letter-spacing:0.3px; border:2px solid transparent; transition:all .18s ease;
+  }
+  .choice.disabled{opacity:0.35; pointer-events:none}
+
+  /* Group buzz buttons */
+  .buzzers{display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+  .buzzer{flex:1; min-width:120px; padding:10px; border-radius:10px; background:rgba(255,255,255,0.03); cursor:pointer; border:2px solid transparent; text-align:center; font-weight:700; color:white;}
+  .buzzer.disabled{opacity:0.35; pointer-events:none}
+
+  /* Glow effects for correct/incorrect */
+  .stage-glow{position:fixed; inset:0; z-index:1; pointer-events:none; transition:box-shadow .22s ease}
+  .green-glow{box-shadow: inset 0 0 200px rgba(34,197,94,0.12), 0 0 120px rgba(34,197,94,0.18)}
+  .red-glow{box-shadow: inset 0 0 200px rgba(239,68,68,0.12), 0 0 120px rgba(239,68,68,0.18)}
+
+  footer{margin-top:18px; opacity:0.85; font-size:13px}
+
+  .end-screen{display:none; padding:18px; text-align:center}
+  .rank-list{margin-top:12px; text-align:left; display:inline-block; background:rgba(0,0,0,0.2); padding:12px; border-radius:8px}
+
+  /* small responsive */
+  @media (max-width:720px){
+    .group-names input{flex:1 1 45%}
+    .choices{grid-template-columns:1fr}
+    .buzzer{min-width:44%}
+  }
+</style>
+</head>
+<body>
+<div class="stage"></div>
+<div class="stage-glow" id="stageGlow"></div>
+
+<div class="container">
+  <header>
+    <div>
+      <h1>EcoBank Showdown</h1>
+      <div class="subtitle">A Reality Game Show on Internet Technologies & Business Ecology</div>
+    </div>
+    <div style="display:flex; gap:8px; align-items:center">
+      <button id="musicToggle" class="btn secondary">Play Music</button>
+      <div style="color:#93c5fd; font-weight:700;">Round: <span id="roundNum">0</span>/<span id="totalQ">12</span></div>
+    </div>
+  </header>
+
+
+
+  <section class="welcome" id="welcomeCard">
+    <h2 style="margin:0 0 6px 0">Welcome to <span style="color:var(--accent)">EcoBank Showdown</span></h2>
+    <div>Enter 6 group names (representatives). These will be used for the buzzer & scoring.</div>
+    <div class="group-names" id="groupInputs">
+      <input placeholder="Group 1" id="g0">
+      <input placeholder="Group 2" id="g1">
+      <input placeholder="Group 3" id="g2">
+      <input placeholder="Group 4" id="g3">
+      <input placeholder="Group 5" id="g4">
+      <input placeholder="Group 6" id="g5">
+    </div>
+    <div class="controls">
+      <button id="startBtn" class="btn">Start Game</button>
+      <button id="loadBtn" class="btn secondary">Load Saved</button>
+      <button id="resetBtn" class="btn secondary">Reset Data</button>
+    </div>
+    <div style="margin-top:10px; font-size:13px; opacity:0.9;">
+      Tip: Use "Load Saved" to continue a previous session. Scores persist on this browser.
+    </div>
+  </section>
+  <aside class="scoreboard" id="scoreboard">
+    <h3>Rankings</h3>
+    <ol id="rankingList"></ol>
+  </aside>
+  <section class="game-area" id="gameArea">
+    <div class="top-bar">
+      <div class="countdown" id="countdownDisplay">Ready</div>
+      <div class="controls">
+        <button id="nextQBtn" class="btn secondary">Next Question</button>
+        <button id="saveBtn" class="btn secondary">Save Now</button>
+      </div>
+    </div>
+
+    <div class="question-card" id="questionCard" style="display:none">
+      <div class="question-text" id="questionText">Question appears here</div>
+
+      <div class="choices" id="choicesArea"></div>
+
+      <div style="margin-top:14px">
+        <div style="font-size:13px; opacity:0.9">Buzz to answer:</div>
+        <div class="buzzers" id="buzzersArea"></div>
+      </div>
+      <div style="margin-top:12px; font-size:13px; opacity:0.9">Current answering group: <span id="currentGroup">—</span></div>
+    </div>
+
+    <div class="end-screen" id="endScreen">
+      <h2>THE END</h2>
+      <div class="rank-list" id="finalRanking"></div>
+      <div style="margin-top:12px">
+        <button id="restartBtn" class="btn">Play Again</button>
+      </div>
+    </div>
+
+    <footer>Made for Business Ecology — Practicing Ethics in IT</footer>
+  </section>
+</div>
+<audio id="bgMusic" loop>
+  <source src="/Gamesho.mp3" type="audio/mpeg">
+</audio>
+
+<script>
+/* -------------- Data & Questions -------------- */
+const QUESTIONS = [
+  { q:"Technology for verifying identity using fingerprint or face", 
+    choices:["Biometrics","Blockchain","Firewall","Wallet"], 
+    a:"Biometrics" 
+  },
+
+  { q:"Digital ledger used for secure and tamper-proof transactions", 
+    choices:["Blockchain","Database","Phishing","Router"], 
+    a:"Blockchain" 
+  },
+
+  { q:"App used for cashless payments in the Philippines", 
+    choices:["GCash","Drive","Camera","Archive"], 
+    a:"GCash" 
+  },
+
+  { q:"Stores and processes banking data online", 
+    choices:["Cloud","Terminal","Cabinet","Cookie"], 
+    a:"Cloud" 
+  },
+
+  { q:"AI system analyzing suspicious banking activities", 
+    choices:["FraudDetection","Rendering","Printing","Editing"], 
+    a:"FraudDetection" 
+  },
+
+  { q:"Secret business information that gives competitive advantage", 
+    choices:["TradeSecret","License","Trademark","Receipt"], 
+    a:"TradeSecret" 
+  },
+
+  { q:"Online payment processor used by e-commerce platforms", 
+    choices:["PayPal","Paint","Calendar","Scanner"], 
+    a:"PayPal" 
+  },
+
+  { q:"Risk involving fake emails that steal data", 
+    choices:["Phishing","Hosting","Bookmark","Address"], 
+    a:"Phishing" 
+  },
+
+  { q:"Digital money used for online transactions", 
+    choices:["DigitalCash","Invoice","Keyboard","Portal"], 
+    a:"DigitalCash" 
+  },
+
+  { q:"Form of crypto used as digital money", 
+    choices:["Bitcoin","Firewall","Spreadsheet","Thumbnail"], 
+    a:"Bitcoin" 
+  },
+
+  { q:"Verification method requiring multiple authentication steps", 
+    choices:["MFA","USB","Cache","Driver"], 
+    a:"MFA" 
+  },
+
+  { q:"Mobile wallet used for QR and online payments", 
+    choices:["Maya","Binder","Manager","Scanner"], 
+    a:"Maya" 
+  }
+];
+
+const TOTAL_Q = QUESTIONS.length;
+
+/* -------------- State -------------- */
+let state = {
+  groups: [ "Group 1","Group 2","Group 3","Group 4","Group 5","Group 6" ],
+  scores: [0,0,0,0,0,0],
+  currentQ: 0,
+  questionOrder: [], // randomized order indexes
+  answeringGroup: null,
+  disabledGroupsThisQuestion: new Set(),
+  buzzerLocked: false
+};
+
+/* -------------- DOM -------------- */
+const welcomeCard = document.getElementById('welcomeCard');
+const gameArea = document.getElementById('gameArea');
+const questionCard = document.getElementById('questionCard');
+const questionText = document.getElementById('questionText');
+const choicesArea = document.getElementById('choicesArea');
+const buzzersArea = document.getElementById('buzzersArea');
+const currentGroupSpan = document.getElementById('currentGroup');
+const scoreboardOl = document.getElementById('rankingList');
+const countdownDisplay = document.getElementById('countdownDisplay');
+const stageGlow = document.getElementById('stageGlow');
+const roundNumSpan = document.getElementById('roundNum');
+const totalQSpan = document.getElementById('totalQ');
+const endScreen = document.getElementById('endScreen');
+const finalRanking = document.getElementById('finalRanking');
+
+/* -------------- Audio via WebAudio for effects (no external files) -------------- */
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playTone(freq=440, duration=0.12, type='sine', gain=0.15){
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.value = gain;
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(); o.stop(audioCtx.currentTime + duration);
+}
+function playCorrect(){ playTone(880,0.14,'sawtooth',0.17); setTimeout(()=>playTone(660,0.1,'sine',0.08),90) }
+function playWrong(){ playTone(180,0.18,'square',0.16); setTimeout(()=>playTone(120,0.09,'square',0.08),120) }
+function playBuzz(){ playTone(520,0.06,'triangle',0.12) }
+
+/* Background music using audio file */
+const bgMusic = document.getElementById("bgMusic");
+
+function startMusic(){
+  bgMusic.volume = 0.25; // adjust volume
+  bgMusic.play();
+  musicOn = true;
+  document.getElementById("musicToggle").innerText = "Pause Music";
+}
+
+function stopMusic(){
+  bgMusic.pause();
+  musicOn = false;
+  document.getElementById("musicToggle").innerText = "Play Music";
+}
+
+/* -------------- Utility -------------- */
+function randShuffle(n){ const arr=Array.from({length:n},(_,i)=>i); for(let i=n-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]] } return arr; }
+function saveState(){ localStorage.setItem('eb_state', JSON.stringify(state)); localStorage.setItem('eb_questions', JSON.stringify(QUESTIONS)); localStorage.setItem('eb_savedAt', new Date().toISOString()); alert('Game saved locally.'); }
+function loadState(){
+  const saved = localStorage.getItem('eb_state');
+  if(!saved) { alert('No saved game in this browser.'); return false; }
+  const s = JSON.parse(saved);
+  state = s;
+  renderScoreboard(); renderBuzzers(); roundNumSpan.innerText = Math.min(state.currentQ+1, TOTAL_Q);
+  return true;
+}
+function resetAll(){
+  if(!confirm('Reset all saved data and scores?')) return;
+  localStorage.removeItem('eb_state'); localStorage.removeItem('eb_questions'); localStorage.removeItem('eb_savedAt');
+  location.reload();
+}
+
+/* -------------- Render -------------- */
+function renderScoreboard(){
+  const ranking = state.groups.map((name,i)=>({name,score:state.scores[i],idx:i}))
+    .sort((a,b)=>b.score-a.score || a.name.localeCompare(b.name));
+  scoreboardOl.innerHTML = ranking.map(r=>`<li>${r.name} — ${r.score}</li>`).join('');
+  // final ranking area if end
+  finalRanking.innerHTML = ranking.map((r,idx)=>`<div style="padding:6px 0">${idx+1}. <b>${r.name}</b> — ${r.score} pts</div>`).join('');
+}
+function renderBuzzers(){
+  buzzersArea.innerHTML = '';
+  state.groups.forEach((g,i)=>{
+    const btn = document.createElement('button');
+    btn.className='buzzer' + (state.disabledGroupsThisQuestion.has(i)?' disabled':'');
+    btn.innerText = `${g}`;
+    btn.onclick = ()=>handleBuzz(i);
+    if(state.buzzerLocked) btn.classList.add('disabled');
+    if(state.disabledGroupsThisQuestion.has(i)) btn.classList.add('disabled');
+    buzzersArea.appendChild(btn);
+  });
+}
+
+/* -------------- Game flow -------------- */
+function startGameFromUI(){
+  // read names
+  for(let i=0;i<6;i++){
+    const val = document.getElementById('g'+i).value.trim();
+    if(val) state.groups[i]=val;
+  }
+  // reset scores & create randomized order
+  state.scores = [0,0,0,0,0,0];
+  state.currentQ = 0;
+  state.questionOrder = randShuffle(TOTAL_Q);
+  state.answeringGroup = null;
+  state.disabledGroupsThisQuestion = new Set();
+  state.buzzerLocked = true;
+
+  // hide welcome, show game
+  welcomeCard.style.display='none';
+  gameArea.style.display='block';
+  questionCard.style.display='none';
+  endScreen.style.display='none';
+  roundNumSpan.innerText = state.currentQ+1;
+  totalQSpan.innerText = TOTAL_Q;
+  renderScoreboard();
+  renderBuzzers();
+  // start first question countdown
+  setTimeout(()=>beginQuestionCountdown(), 300);
+}
+
+function beginQuestionCountdown(){
+  if(state.currentQ >= TOTAL_Q){ finishGame(); return; }
+  state.answeringGroup = null;
+  state.disabledGroupsThisQuestion = new Set();
+  state.buzzerLocked = true;
+  renderBuzzers();
+  questionCard.style.display='none';
+  let t = 3;
+  countdownDisplay.innerText = `Question will show in [${t}]`;
+  const cd = setInterval(()=>{
+    t--;
+    if(t>0){ countdownDisplay.innerText = `Question will show in [${t}]`; playTone(800 - t*40, 0.06); }
+    else {
+      clearInterval(cd);
+      revealQuestion();
+    }
+  },1000);
+}
+
+function revealQuestion(){
+  countdownDisplay.innerText = `Answer fast!`;
+  const qIndex = state.questionOrder[state.currentQ];
+  const qObj = QUESTIONS[qIndex];
+  questionText.innerText = qObj.q;
+  // render choices (words only)
+  choicesArea.innerHTML = '';
+  qObj.choices.forEach(ch=>{
+    const el = document.createElement('div');
+    el.className = 'choice';
+    el.innerText = ch;
+    el.onclick = ()=>handleAnswerClick(ch);
+    choicesArea.appendChild(el);
+  });
+  // show buzzers
+  questionCard.style.display='block';
+  state.buzzerLocked = false;
+  renderBuzzers();
+  // enable buzzing; whoever buzzes first becomes answeringGroup
+}
+
+function handleBuzz(groupIdx){
+  if(state.buzzerLocked) return;
+  if(state.disabledGroupsThisQuestion.has(groupIdx)) return;
+  // if there's currently no answeringGroup, set it; if someone already answering, ignore (only first accepted)
+  if(state.answeringGroup === null){
+    state.answeringGroup = groupIdx;
+    currentGroupSpan.innerText = state.groups[groupIdx];
+    playBuzz();
+    // visually highlight buzzer briefly
+    const buttons = buzzersArea.querySelectorAll('.buzzer');
+    buttons[groupIdx].style.borderColor = 'rgba(255,255,255,0.14)';
+    setTimeout(()=>{ buttons[groupIdx].style.borderColor = 'transparent'; }, 400);
+  }
+}
+
+function handleAnswerClick(choiceWord){
+  if(state.answeringGroup === null){
+    alert('No group has buzzed to answer yet! First buzz to claim turn.');
+    return;
+  }
+  // check correctness
+  const qIndex = state.questionOrder[state.currentQ];
+  const correct = QUESTIONS[qIndex].a;
+  const group = state.answeringGroup;
+  if(choiceWord === correct){
+    // correct!
+    playCorrect();
+    flashStage('green');
+    // award points
+    state.scores[group] += 10;
+    // update UI
+    updateAfterCorrect();
+  } else {
+    // wrong — disable this group for this question and allow others to steal
+    playWrong();
+    flashStage('red');
+    state.disabledGroupsThisQuestion.add(group);
+    // mark their buzzer disabled
+    state.answeringGroup = null;
+    currentGroupSpan.innerText = '—';
+    renderBuzzers();
+    // disable the chosen option visually
+    Array.from(choicesArea.children).forEach(chEl=>{
+      if(chEl.innerText === choiceWord) chEl.classList.add('disabled');
+    });
+    // check if all groups exhausted
+    if(state.disabledGroupsThisQuestion.size >= state.groups.length){
+      // no one got it - reveal answer, no points
+      alert('No group could answer. Correct: ' + correct);
+      nextQuestionAuto();
+    }
+  }
+  renderScoreboard();
+  persistStateSilently();
+}
+
+function updateAfterCorrect(){
+  // mark UI: choices disabled, highlight correct choice
+  Array.from(choicesArea.children).forEach(chEl=>{
+    chEl.classList.add('disabled');
+    if(chEl.innerText === QUESTIONS[state.questionOrder[state.currentQ]].a){
+      chEl.style.borderColor = 'rgba(34,197,94,0.9)';
+    }
+  });
+  // proceed to next question after short delay
+  setTimeout(()=> nextQuestionAuto(), 1200);
+}
+
+function flashStage(color){
+  const el = stageGlow;
+  if(color==='green'){ el.classList.add('green-glow'); setTimeout(()=>el.classList.remove('green-glow'),900) }
+  else { el.classList.add('red-glow'); setTimeout(()=>el.classList.remove('red-glow'),900) }
+}
+
+function nextQuestionAuto(){
+  // move to next question
+  state.currentQ++;
+  roundNumSpan.innerText = Math.min(state.currentQ+1, TOTAL_Q);
+  state.answeringGroup = null;
+  state.disabledGroupsThisQuestion = new Set();
+  state.buzzerLocked = true;
+  questionCard.style.display='none';
+  if(state.currentQ >= TOTAL_Q){ finishGame(); return; }
+  setTimeout(()=> beginQuestionCountdown(), 700);
+}
+
+/* -------------- End & Persistence -------------- */
+function finishGame(){
+  questionCard.style.display='none';
+  countdownDisplay.innerText = 'Finished';
+  endScreen.style.display='block';
+  // show final ranking
+  renderScoreboard();
+  // clear saved state so replay starts fresh
+  //localStorage.removeItem('eb_state'); // keep the state saved unless user resets
+}
+
+/* -------------- Init UI bindings -------------- */
+document.getElementById('startBtn').addEventListener('click', startGameFromUI);
+document.getElementById('loadBtn').addEventListener('click', ()=>{
+  const ok = loadState();
+  if(ok){
+    welcomeCard.style.display='none';
+    gameArea.style.display='block';
+    questionCard.style.display = (state.currentQ < TOTAL_Q ? 'block' : 'none');
+    renderScoreboard();
+    renderBuzzers();
+  }
+});
+document.getElementById('resetBtn').addEventListener('click', resetAll);
+
+document.getElementById('nextQBtn').addEventListener('click', ()=> {
+  // admin override to skip current Q
+  if(confirm('Skip to next question?')) nextQuestionAuto();
+});
+
+document.getElementById('saveBtn').addEventListener('click', saveState);
+document.getElementById('restartBtn').addEventListener('click', ()=> location.reload());
+document.getElementById('musicToggle').addEventListener('click', async ()=>{
+    try {
+        await bgMusic.play();
+        startMusic();
+    } catch(e) {
+        console.log("Audio blocked:", e);
+    }
+});
+
+/* Save automatically to localStorage after each scoring change */
+function persistStateSilently(){
+  try { localStorage.setItem('eb_state', JSON.stringify(state)); } catch(e){}
+}
+
+/* Load previously saved if exists into input fields for convenience */
+(function initFromSaved(){
+  const saved = localStorage.getItem('eb_state');
+  if(saved){
+    const s = JSON.parse(saved);
+    if(s.groups && s.groups.length===6){
+      for(let i=0;i<6;i++){ document.getElementById('g'+i).value = s.groups[i] || `Group ${i+1}` }
+    }
+  }
+  renderScoreboard();
+})();
+
+/* display totals */
+document.getElementById('totalQ').innerText = TOTAL_Q;
+
+/* ensure that clicking a choice only counts if current group is set */
+function disableAnswerClicksDuringNoTurn(){
+  // nothing extra; handled in handleAnswerClick
+}
+
+/* allow keyboard shortcut: space to buzz for group 1 (demo) */
+document.addEventListener('keydown', (e)=>{
+  if(e.code==='Digit1') handleBuzz(0);
+  if(e.code==='Digit2') handleBuzz(1);
+  if(e.code==='Digit3') handleBuzz(2);
+  if(e.code==='Digit4') handleBuzz(3);
+  if(e.code==='Digit5') handleBuzz(4);
+  if(e.code==='Digit6') handleBuzz(5);
+});
+
+/* Prevent accidental page unload without saving */
+window.addEventListener('beforeunload', (e)=>{
+  // encourage save but not block
+  // e.returnValue = '';
+});
+
+/* End of script */
+</script>
+</body>
+</html>
